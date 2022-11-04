@@ -1,0 +1,9 @@
+six
+scipy
+cython
+Pillow
+tqdm
+progressbar2
+keras==2.3.1
+bert4keras==0.11.3
+pipetool

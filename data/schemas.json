@@ -1,0 +1,4 @@
+{"subject_type": "部件单元", "predicate": "部件故障", "object_type": "故障状态"}
+{"subject_type": "性能表征", "predicate": "性能故障", "object_type": "故障状态"}
+{"subject_type": "检测工具", "predicate": "检测工具", "object_type": "性能表征"}
+{"subject_type": "部件单元", "predicate": "组成", "object_type": "部件单元"}
