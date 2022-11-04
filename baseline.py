@@ -15,6 +15,7 @@ from tqdm import tqdm
 from pathlib import Path
 from sklearn.model_selection import KFold
 import tensorflow as tf
+from keras.callbacks import TensorBoard
 
 gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.8)
 sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options, log_device_placement=True))
@@ -454,10 +455,18 @@ if train:
         opt = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt, loss_scale='dynamic')
 
         model.compile(loss=globalpointer_crossentropy, optimizer=opt)
-        model.summary()
+        print("Model summary:")
+        model.summary()  # 输出模型各层的参数状况
 
         # from tools.adversarial_training import *
         # adversarial_training(model, 'Embedding-Token', 0.5)
+
+        # create log
+        logger = TensorBoard(
+            log_dir='logs',
+            histogram_freq=5,
+            write_graph=True
+        )
 
         # Run main program
         train_generator = data_generator(train_data, batch_size)
@@ -466,7 +475,7 @@ if train:
             train_generator.forfit(),
             steps_per_epoch=len(train_generator),
             epochs=epochs,
-            callbacks=[evaluator]
+            callbacks=[evaluator, logger]
         )
 else:
     test_data = load_data('data/test.json')
