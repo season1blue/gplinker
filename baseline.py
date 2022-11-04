@@ -13,12 +13,11 @@ from bert4keras.snippets import sequence_padding, DataGenerator
 from bert4keras.snippets import open, to_array
 from tqdm import tqdm
 from pathlib import Path
-
+from sklearn.model_selection import KFold
 import tensorflow as tf
 
 gpu_options = tf.compat.v1.GPUOptions(per_process_gpu_memory_fraction=0.8)
 sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options, log_device_placement=True))
-
 
 def normalize(text):
     """简单的文本格式化函数
@@ -246,7 +245,7 @@ def globalpointer_crossentropy(y_true, y_pred):
     return K.mean(K.sum(loss, axis=1))
 
 
-def extract_spoes(text, threshold=0):
+def extract_spoes(text, threshold=0, ):
     """抽取输入text所包含的三元组
     """
     tokens = tokenizer.tokenize(text, maxlen=maxlen)
@@ -341,10 +340,10 @@ def evaluate(data):
     return f1, precision, recall
 
 
-def do_predict():
-    model.load_weights(model_n)
+def do_predict(model_name, t_data):
+    model.load_weights(model_name)
     with open(Path('output', 'spo.json'), 'w', encoding='utf-8') as f:
-        for d in tqdm(test_data):
+        for d in tqdm(t_data):
             rs = {'ID': d['ID'], 'text': d['text'], 'spo_list': []}
             R = extract_spoes(d['text'])
             for spo in R:
@@ -393,84 +392,82 @@ class ModelCheckpoint(keras.callbacks.Callback):
 
 maxlen = 512
 batch_size = 2
-epochs = 150
+epochs = 70
+k_num = 5
+train = True
 
 config_path = 'pretrain_models/NEZHA-Base-WWM/bert_config.json'
 checkpoint_path = 'pretrain_models/NEZHA-Base-WWM/model.ckpt'
 dict_path = 'pretrain_models/NEZHA-Base-WWM/vocab.txt'
-
-# 数据集预处理
-pure_data(filename_old='data/train_concat.json', filename_new='ouside_data/new_train_bdci.json')
-
-# 加载数据集
-data = json_load_data('data/train_pure.json')  # 5956
-test_data = load_data('data/test.json')
-
-train_data = [j for i, j in enumerate(data) if i % 9 != 0]
-valid_data = [j for i, j in enumerate(data) if i % 9 == 0]
-predicate2id, id2predicate = {}, {}
-
-with open('data/schemas.json', encoding='utf-8') as f:
-    for l in f:
-        l = json.loads(l)
-        if l['predicate'] not in predicate2id:
-            id2predicate[len(predicate2id)] = l['predicate']
-            predicate2id[l['predicate']] = len(predicate2id)
-
-# 建立分词器
-tokenizer = Tokenizer(dict_path, do_lower_case=True)
-
-# 加载预训练模型
-base = build_transformer_model(
-    config_path=config_path,
-    checkpoint_path=checkpoint_path,
-    return_keras_model=False,
-    model='nezha'
-)
-
-# 预测结果
-entity_output = GlobalPointer(heads=2, head_size=64)(base.model.output)
-head_output = GlobalPointer(
-    heads=len(predicate2id), head_size=64, RoPE=False, tril_mask=False
-)(base.model.output)
-tail_output = GlobalPointer(
-    heads=len(predicate2id), head_size=64, RoPE=False, tril_mask=False
-)(base.model.output)
-outputs = [entity_output, head_output, tail_output]
-
-# 构建模型
-model = keras.models.Model(base.model.inputs, outputs)
-# model.compile(loss=globalpointer_crossentropy, optimizer=Adam(2e-5))
-# model.summary()
-
-
-import tensorflow as tf
-
-opt = tf.compat.v1.train.AdamOptimizer(1e-5)
-# add a line  混合精度训练
-opt = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt, loss_scale='dynamic')
-
-model.compile(loss=globalpointer_crossentropy, optimizer=opt)
-
-model.summary()
-
-# from tools.adversarial_training import *
-# adversarial_training(model, 'Embedding-Token', 0.5)
-
 model_n = 'best_model.weights'
 
+if train:
+    # 数据集预处理
+    pure_data(filename_old='data/train_concat.json', filename_new='ouside_data/new_train_bdci.json')
+    # 加载数据集
+    data = json_load_data('data/train_pure.json')  # 5956
+    data = np.array(data)
+    # 构建train_data和valid_data
+    kf = KFold(n_splits=k_num, shuffle=True, random_state=42)
+    fold = 0
+    for train_index, valid_index in kf.split(data):
+        fold += 1
+        print(f"Current fold is {fold}")
+        train_data = data[train_index]
+        valid_data = data[valid_index]
 
-if __name__ == '__main__':
+        # train_data = [j for i, j in enumerate(data) if i % 9 != 0]
+        # valid_data = [j for i, j in enumerate(data) if i % 9 == 0]
+        predicate2id, id2predicate = {}, {}
 
-    train_generator = data_generator(train_data, batch_size)
-    evaluator = Evaluator()
+        with open('data/schemas.json', encoding='utf-8') as f:
+            for l in f:
+                l = json.loads(l)
+                if l['predicate'] not in predicate2id:
+                    id2predicate[len(predicate2id)] = l['predicate']
+                    predicate2id[l['predicate']] = len(predicate2id)
 
-    model.fit(
-        train_generator.forfit(),
-        steps_per_epoch=len(train_generator),
-        epochs=epochs,
-        callbacks=[evaluator]
-    )
+        # 建立分词器
+        tokenizer = Tokenizer(dict_path, do_lower_case=True)
+
+        # 加载预训练模型
+        base = build_transformer_model(
+            config_path=config_path,
+            checkpoint_path=checkpoint_path,
+            return_keras_model=False,
+            model='nezha'
+        )
+
+        # 预测结果
+        entity_output = GlobalPointer(heads=2, head_size=64)(base.model.output)
+        head_output = GlobalPointer(heads=len(predicate2id), head_size=64, RoPE=False, tril_mask=False)(
+            base.model.output)
+        tail_output = GlobalPointer(heads=len(predicate2id), head_size=64, RoPE=False, tril_mask=False)(
+            base.model.output)
+        outputs = [entity_output, head_output, tail_output]
+
+        # 构建模型
+        model = keras.models.Model(base.model.inputs, outputs)
+
+        opt = tf.compat.v1.train.AdamOptimizer(1e-5)
+        # add a line  混合精度训练
+        opt = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt, loss_scale='dynamic')
+
+        model.compile(loss=globalpointer_crossentropy, optimizer=opt)
+        model.summary()
+
+        # from tools.adversarial_training import *
+        # adversarial_training(model, 'Embedding-Token', 0.5)
+
+        # Run main program
+        train_generator = data_generator(train_data, batch_size)
+        evaluator = Evaluator()
+        model.fit(
+            train_generator.forfit(),
+            steps_per_epoch=len(train_generator),
+            epochs=epochs,
+            callbacks=[evaluator]
+        )
 else:
-    do_predict()
-# do_predict()
+    test_data = load_data('data/test.json')
+    do_predict(model_name=model_n, t_data=test_data)

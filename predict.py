@@ -1,4 +1,5 @@
-import json,pipetool
+
+import json ,pipetool
 import numpy as np
 from bert4keras.backend import keras, K
 from bert4keras.backend import sparse_multilabel_categorical_crossentropy
@@ -9,7 +10,7 @@ from bert4keras.optimizers import Adam
 from bert4keras.snippets import sequence_padding, DataGenerator
 from bert4keras.snippets import open, to_array
 from tqdm import tqdm
-from pathlib  import Path 
+from pathlib  import Path
 
 def extract_spoes(text, threshold=0):
     """抽取输入text所包含的三元组
@@ -30,7 +31,7 @@ def extract_spoes(text, threshold=0):
         else:
             objects.add((h, t))
     # 识别对应的predicate
-    spoes = {} 
+    spoes = {}
     for sh, st in subjects:
         for oh, ot in objects:
             p1s = np.where(outputs[1][:, sh, oh] > threshold)[0]
@@ -44,10 +45,10 @@ def extract_spoes(text, threshold=0):
                 h = text[psh:pst]
                 t = text[poh:pot]
                 p = id2predicate[p]
-                key = '_'.join([h,p,t])
+                key = '_'.join([h ,p ,t])
                 if not spoes.get(key):
                     p_spo = (
-                        [h,psh,pst],p,[t,poh,pot]
+                        [h ,psh ,pst] ,p ,[t ,poh ,pot]
                     )
                     spoes[key] = p_spo
     return spoes.values()
@@ -56,7 +57,7 @@ config_path = 'pretrain_models/chinese_wobert_L-12_H-768_A-12/bert_config.json'
 checkpoint_path = 'pretrain_models/chinese_wobert_L-12_H-768_A-12/bert_model.ckpt'
 dict_path = 'pretrain_models/chinese_wobert_L-12_H-768_A-12/vocab.txt'
 
-    
+
 # 加载预训练模型
 base = build_transformer_model(
     config_path=config_path,
@@ -81,38 +82,38 @@ model = keras.models.Model(base.model.inputs, outputs)
 
 
 import tensorflow as tf
-opt = tf.keras.optimizers.Adam(1e-5) 
-#add a line  混合精度训练
+opt = tf.keras.optimizers.Adam(1e-5)
+# add a line  混合精度训练
 opt = tf.train.experimental.enable_mixed_precision_graph_rewrite(
-            opt,
-            loss_scale='dynamic')
+    opt,
+    loss_scale='dynamic')
 
 model.compile(loss=globalpointer_crossentropy, optimizer=opt)
- 
-model.summary() 
+
+model.summary()
 
 model_n = 'best_model.weights'
-def do_predict(): 
+def do_predict():
     print("predicting.....")
     model.load_weights(model_n)
-    with open(Path('output','spo.json'),'w', encoding='utf-8') as f:
+    with open(Path('output' ,'spo.json') ,'w', encoding='utf-8') as f:
         for d in tqdm(test_data):
-            rs = {'ID':d['ID'],'text':d['text'],'spo_list':[]}
+            rs = {'ID' :d['ID'] ,'text' :d['text'] ,'spo_list' :[]}
             R = extract_spoes(d['text'])
             for spo in R:
                 spo_dict = {
-                    'h':{
-                        'name':spo[0][0],
-                        'pos':[spo[0][1],spo[0][2]]
-                        },
-                    't':{
-                        'name':spo[2][0],
-                        'pos':[spo[2][1],spo[2][2]]
-                        },
-                    'relation':spo[1]
-                    }
+                    'h' :{
+                        'name' :spo[0][0],
+                        'pos' :[spo[0][1] ,spo[0][2]]
+                    },
+                    't' :{
+                        'name' :spo[2][0],
+                        'pos' :[spo[2][1] ,spo[2][2]]
+                    },
+                    'relation' :spo[1]
+                }
                 rs['spo_list'].append(spo_dict)
-            s = json.dumps(rs,ensure_ascii=False)
-            f.write(s + '\n') 
+            s = json.dumps(rs ,ensure_ascii=False)
+            f.write(s + '\n')
 
 do_predict()
